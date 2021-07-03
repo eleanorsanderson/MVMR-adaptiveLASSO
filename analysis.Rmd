@@ -1,0 +1,163 @@
+---
+title: "MVMR LASSO analysis"
+author: "Eleanor Sanderson"
+output: pdf_document
+---
+
+
+```{r, setup, include=FALSE}
+library(tidyverse)
+library(readr)
+library(dplyr)
+library(zoo)
+library(AER)
+library(ggplot2)
+library(naniar)
+library(lubridate)
+
+source("filepaths.R")
+
+```
+
+```{r, include=FALSE}
+
+setwd(datafolder)
+load("phenotypedata.Rdata")
+load("snpdata.RData")
+load("PCs.RData")
+
+PCs <- select(PCs, V3:V12, app) %>%
+  rename(PC1 = V3) %>%
+  rename(PC2 = V4) %>%
+  rename(PC3 = V5) %>%
+  rename(PC4 = V6) %>%
+  rename(PC5 = V7) %>%
+  rename(PC6 = V8) %>%
+  rename(PC7 = V9) %>%
+  rename(PC8 = V10) %>%
+  rename(PC9 = V11) %>%
+  rename(PC10 = V12) 
+
+dat <- as_tibble(bd2) %>% 
+                  rename(app=f.eid) %>%
+                  inner_join(snpdat, by="app") %>%
+                  inner_join(PCs, by="app")
+                  
+setwd(projectfolder)
+snp_list_edu <- read.table("edu_snplist.txt")
+snp_list_cog <- read.table("cog_snplist.txt")
+```
+
+1. Cleaning the phenotype data
+ - rename variables and create the age variable 
+
+```{r, include=FALSE}
+
+dat <- rename(dat, yob = f.34.0.0) %>%
+          rename(mob = f.52.0.0) %>%
+          rename(sex = f.31.0.0) %>%
+          rename(date = f.53.0.0) %>%
+          rename(edu_age = f.845.0.0) %>%
+          rename(high_qual = f.6138.0.0) %>%
+          rename(smoke = f.20116.0.0) %>%
+          rename(cog = f.20016.0.0) %>%
+          rename(bmi = f.21001.0.0) 
+
+dat <- mutate(dat, dob = make_date(year = yob, month = mob), .before = yob) 
+dat <- mutate(dat,age = floor(time_length(dat$date - dat$dob, unit = "years")), .before = dob)
+
+```
+
+ - create a list of SNPs for the instruments for the MR analysis
+ - remove the effect alleles from the column names in the SNP data
+```{r, include=FALSE}
+
+
+snp_list <- tibble(rbind(snp_list_edu,snp_list_cog))
+
+instruments = NULL
+for(i in 1:length(snp_list$V1)){
+  instruments <- c(instruments, snp_list[i,1])
+}
+
+colnames(dat)<-gsub("_A","",colnames(dat))
+colnames(dat)<-gsub("_G","",colnames(dat))
+colnames(dat)<-gsub("_C","",colnames(dat))
+colnames(dat)<-gsub("_T","",colnames(dat))
+
+```
+
+ - replace edu age with 21 if highest qual is degree
+ - complete case data only
+ - remove age leaving education < 10
+ - standardise cognitive ability
+ - log bmi
+
+```{r, include = FALSE}
+
+dat <- dat %>% mutate(edu_age = replace(edu_age, which(is.na(edu_age) & high_qual == "College or University degree"), 21)) 
+
+dat <-  drop_na(dat, c(cog,edu_age,bmi,age,sex)) 
+
+dat <- dat %>%  replace_with_na_at(.vars = c("edu_age"),
+                     condition = ~.x <10)
+dat <- drop_na(dat, edu_age)
+
+dat <- dat %>% mutate_at("cog", ~(scale(.) %>% as.vector))
+
+dat$lnbmi <- log(dat$bmi)
+
+```
+
+Plot the distributions for each of the main variables used in the analysis
+
+```{r, echo=FALSE}
+ggplot(dat, aes(x=bmi)) + 
+    geom_histogram(aes(y=..density..),     
+                   binwidth=2,
+                   colour="black", fill="white") +
+    geom_density(alpha=.2, fill="#FF6666")  
+
+ggplot(dat, aes(x=edu_age)) + 
+    geom_histogram(binwidth=1,
+                   colour="black", fill="white")
+
+ggplot(dat, aes(x=cog)) + 
+    geom_histogram(binwidth=1,
+                   colour="black", fill="white")
+```
+2. MVMR estimation 
+
+2SLS regression including each snp as a separate instrument
+
+These regressions give similar results to those in Sanderson et al 2019. 
+Differences have arrisen because: 
+ - here interim release data has not been excluded from the analysis
+ - fewer covariates have been included in the estimation
+ 
+Covariates included in each regression are; age, sex and 10 PC's. 
+
+Overall the results show that education has a bmi lowering effect and cognitive ability has limited evidence of any effect. When the SNPs are included individually the Sargan statistic is large - indicating substantial heterogenetiy in the results. However the instruments are relatively weak. When the genetic risk scores are used as instruments the instruments are strong and the effect estimates are further from the null for each exposure. 
+
+
+
+
+```{r}
+
+covars <- paste(" age + factor(sex) +", paste0("PC",1:10,collapse = "+"), "|", "age + factor(sex) +", paste0("PC",1:10,collapse = "+"))
+#[Note - covriates need to be included on both sides of the covars paste command]
+
+ivformula <- as.formula(paste("lnbmi ~ edu_age + cog", covars, paste(instruments, collapse="+"), sep = "+"))
+
+summary(ivreg(ivformula, data=dat), diagnostics=TRUE)
+
+```
+
+2SLS regression using the weighted scores 
+
+```{r}
+grsformula <- as.formula(paste("lnbmi ~ edu_age + cog", covars, "cog_grs", "edu_grs", sep = "+"))
+summary(ivreg(grsformula, data=dat), diagnostics=TRUE)
+
+```
+
