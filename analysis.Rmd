@@ -48,6 +48,10 @@ snp_list_edu <- read.table("edu_snplist.txt")
 snp_list_cog <- read.table("cog_snplist.txt")
 ```
 
+Data
+
+
+
 1. Cleaning the phenotype data
  - rename variables and create the age variable 
 
@@ -144,10 +148,12 @@ Overall the results show that education has a bmi lowering effect and cognitive 
 
 ```{r}
 
-covars <- paste(" age + factor(sex) +", paste0("PC",1:10,collapse = "+"), "|", "age + factor(sex) +", paste0("PC",1:10,collapse = "+"))
+covars <- paste(" age + factor(sex) +", paste0("PC",1:10,collapse = "+"), "|", 
+                "age + factor(sex) +", paste0("PC",1:10,collapse = "+"))
 #[Note - covriates need to be included on both sides of the covars paste command]
 
-ivformula <- as.formula(paste("lnbmi ~ edu_age + cog", covars, paste(instruments, collapse="+"), sep = "+"))
+ivformula <- as.formula(paste("lnbmi ~ edu_age + cog", covars, 
+                              paste(instruments, collapse="+"), sep = "+"))
 
 summary(ivreg(ivformula, data=dat), diagnostics=TRUE)
 
@@ -156,7 +162,8 @@ summary(ivreg(ivformula, data=dat), diagnostics=TRUE)
 2SLS regression using the weighted scores 
 
 ```{r}
-grsformula <- as.formula(paste("lnbmi ~ edu_age + cog", covars, "cog_grs", "edu_grs", sep = "+"))
+grsformula <- as.formula(paste("lnbmi ~ edu_age + cog", covars, 
+                               "cog_grs", "edu_grs", sep = "+"))
 summary(ivreg(grsformula, data=dat), diagnostics=TRUE)
 
 ```
