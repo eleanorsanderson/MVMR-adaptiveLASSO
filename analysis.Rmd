@@ -11,6 +11,7 @@ library(readr)
 library(dplyr)
 library(zoo)
 library(AER)
+library(ivreg)
 library(ggplot2)
 library(naniar)
 library(lubridate)
@@ -46,10 +47,15 @@ dat <- as_tibble(bd2) %>%
 setwd(projectfolder)
 snp_list_edu <- read.table("edu_snplist.txt")
 snp_list_cog <- read.table("cog_snplist.txt")
+source("fsw.R")
 ```
 
 Data
+Analysis dataset: UKBiobank
 
+Education SNPs taken from Okbay A, Beauchamp JP, Fontana MA, Lee JJ, Pers TH, Rietveld CA, et al. Genome-wide association study identifies 74 loci associated with educational attainment. Nature. 2016
+
+Cognitive ability SNPs taken from Sniekers S, Stringer S, Watanabe K, Jansen PR, Coleman JR, Krapohl E, et al. Genome-wide association meta-analysis of 78,308 individuals identifies new loci and genes influencing human intelligence. Nat Genet. 2017.
 
 
 1. Cleaning the phenotype data
@@ -69,6 +75,8 @@ dat <- rename(dat, yob = f.34.0.0) %>%
 
 dat <- mutate(dat, dob = make_date(year = yob, month = mob), .before = yob) 
 dat <- mutate(dat,age = floor(time_length(dat$date - dat$dob, unit = "years")), .before = dob)
+
+dat$male <- if_else(dat$sex %in% "Male", 1, 0)
 
 ```
 
@@ -115,7 +123,8 @@ dat$lnbmi <- log(dat$bmi)
 
 Plot the distributions for each of the main variables used in the analysis
 
-```{r, echo=FALSE}
+```{r, include=FALSE}
+
 ggplot(dat, aes(x=bmi)) + 
     geom_histogram(aes(y=..density..),     
                    binwidth=2,
@@ -148,14 +157,16 @@ Overall the results show that education has a bmi lowering effect and cognitive 
 
 ```{r}
 
-covars <- paste(" age + factor(sex) +", paste0("PC",1:10,collapse = "+"), "|", 
-                "age + factor(sex) +", paste0("PC",1:10,collapse = "+"))
+covars <- paste(" age + male +", paste0("PC",1:10,collapse = "+"), "|", 
+                "age + male +", paste0("PC",1:10,collapse = "+"))
 #[Note - covriates need to be included on both sides of the covars paste command]
 
 ivformula <- as.formula(paste("lnbmi ~ edu_age + cog", covars, 
                               paste(instruments, collapse="+"), sep = "+"))
 
-summary(ivreg(ivformula, data=dat), diagnostics=TRUE)
+indreg <- ivreg(ivformula, data=dat, model = TRUE)
+summary(indreg, diagnostics=TRUE)
+fsw(indreg)
 
 ```
 
@@ -164,7 +175,10 @@ summary(ivreg(ivformula, data=dat), diagnostics=TRUE)
 ```{r}
 grsformula <- as.formula(paste("lnbmi ~ edu_age + cog", covars, 
                                "cog_grs", "edu_grs", sep = "+"))
-summary(ivreg(grsformula, data=dat), diagnostics=TRUE)
+
+scorereg <- ivreg(grsformula, data=dat, model=TRUE) 
+summary(scorereg, diagnostics=TRUE)
+fsw(scorereg)
 
 ```
 
