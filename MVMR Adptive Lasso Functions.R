@@ -34,7 +34,7 @@ MVadap.cv <- function(Y, D, Z, X, alpha = 0.05){
   
   if (!missing(X)){
     X <- cbind(1, X);
-    if(is.null(colnames(X))){colnames(X) = c("intercept", paste0('X', 1:(ncol(X)-1)))}else{colnames(X) = c("intercept", colnames(X))};
+    if(is.null(colnames(X))){colnames(X) = c("intercept", paste0('X', 1:(ncol(X)-1)))}else{colnames(X) = c("intercept", colnames(X[,-1]))};
   }else{
     X <- matrix(1, n, 1);
     colnames(X) <- "intercept";
@@ -301,7 +301,7 @@ MVadap.dt <- function(Y, D, Z, X, alpha = 0.05, tuning = 0.1/log(length(Y))){
   
   if (!missing(X)){
     X <- cbind(1, X);
-    if(is.null(colnames(X))){colnames(X) = c("intercept", paste0('X', 1:(ncol(X)-1)))}else{colnames(X) = c("intercept", colnames(X))};
+    if(is.null(colnames(X))){colnames(X) = c("intercept", paste0('X', 1:(ncol(X)-1)))}else{colnames(X) = c("intercept", colnames(X[,-1]))};
   }else{
     X <- matrix(1, n, 1);
     colnames(X) <- "intercept";
