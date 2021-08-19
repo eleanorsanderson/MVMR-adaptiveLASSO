@@ -182,3 +182,40 @@ fsw(scorereg)
 
 ```
 
+
+
+Lasso analysis
+ - notes: update to use correct file when have github linked properly again. 
+ 
+ 
+```{r}
+source("lasso_function.R")
+
+dat_sample <- dat 
+
+#set up data
+
+Y <- as.vector(dat_sample$lnbmi)
+
+D <- dat_sample %>% 
+  select(edu_age, cog) %>% 
+  as.matrix()
+
+
+ivs <- dat_sample %>% 
+  select(starts_with("rs")) %>%
+  as.matrix()
+
+X <- dat_sample %>% 
+  select(age, male, PC1:PC10) %>%
+  as.matrix()
+
+
+MVadap.cv(Y,D,ivs,X,alpha = 0.05)
+
+MVadap.dt(Y,D,ivs,X,alpha = 0.05, tuning = 0.1/log(length(Y)))
+
+```
+
+
+
