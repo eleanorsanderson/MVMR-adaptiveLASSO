@@ -77,7 +77,7 @@ MVadap.cv <- function(Y, D, Z, X, alpha = 0.05){
   pi_median <- gamma_Y - gamma_D %*% c(med1,med2);
   
   # convert the adaptive Lasso
-  QR <- qr(Z); Dhat <- qr.fitted(QR,D); Zt <- Z - Dhat%*%solve(crossprod(Dhat))%*%t(Dhat)%*%Z;
+  QR <- qr(Z); Dhat <- qr.fitted(QR,D); DhatZ <- t(Dhat)%*%Z;  Zt <- Z - Dhat%*%solve(crossprod(Dhat))%*%DhatZ;
   
   # Function of the adaptive Lasso estimators for beta
   adpbeta <- function(Y,D,Z,pi){
@@ -344,7 +344,7 @@ MVadap.dt <- function(Y, D, Z, X, alpha = 0.05, tuning = 0.1/log(length(Y))){
   pi_median <- gamma_Y - gamma_D %*% c(med1,med2);
   
   # convert the adaptive Lasso
-  QR <- qr(Z); Dhat <- qr.fitted(QR,D); Zt <- Z - Dhat%*%solve(crossprod(Dhat))%*%t(Dhat)%*%Z;
+  QR <- qr(Z); Dhat <- qr.fitted(QR,D); DhatZ <- t(Dhat)%*%Z;  Zt <- Z - Dhat%*%solve(crossprod(Dhat))%*%DhatZ;
   
   # downward testing procedure
   penaltya = 1/abs(pi_median); # weights for the adaptive Lasso
