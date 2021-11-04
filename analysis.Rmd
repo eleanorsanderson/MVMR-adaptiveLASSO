@@ -16,16 +16,17 @@ library(ggplot2)
 library(naniar)
 library(lubridate)
 
-source("filepaths.R")
+#source("filepaths.R")
 
 ```
 
 ```{r, include=FALSE}
 
-setwd(datafolder)
+#setwd(datafolder)
 load("phenotypedata.Rdata")
-load("snpdata.RData")
-load("PCs.RData")
+load("snpdata.Rdata")
+snpdat <- select(snpdat, -edu_grs, -cog_grs)
+load("PCs.Rdata")
 
 PCs <- select(PCs, V3:V12, app) %>%
   rename(PC1 = V3) %>%
@@ -43,10 +44,44 @@ dat <- as_tibble(bd2) %>%
                   rename(app=f.eid) %>%
                   inner_join(snpdat, by="app") %>%
                   inner_join(PCs, by="app")
+
+#add in the scores created using the GWAS effect sizes
+educationscore <- read.delim("education.sscore", header=FALSE, comment.char="#")
+cogscore <- read.delim("cognitive_ability.sscore", header=FALSE, comment.char="#")
+
+educationscore_update <- read.delim("education_update.sscore", header=FALSE, comment.char="#")
+cogscore_update <- read.delim("cognitive_ability_update.sscore", header=FALSE, comment.char="#")
+
+educationscore <- educationscore %>% 
+                          rename(IID = V2) %>%
+                          rename(edu_grs = V5)
+
+cogscore <- cogscore %>% 
+                          rename(IID = V2) %>%
+                          rename(cog_grs = V5)
+
+educationscore_update <- educationscore_update %>% 
+                          rename(IID = V2) %>%
+                          rename(edu_grs_update = V5)
+
+cogscore_update <- cogscore_update %>% 
+                          rename(IID = V2) %>%
+                          rename(cog_grs_update = V5)
+
+scores <- educationscore %>%
+  inner_join(cogscore, by="IID") %>%
+  inner_join(educationscore_update, by="IID") %>%
+  inner_join(cogscore_update, by="IID") %>%
+  select(IID, edu_grs, cog_grs, edu_grs_update, cog_grs_update)
+
+dat <- dat %>%
+  left_join(scores)
+
                   
-setwd(projectfolder)
+#setwd(projectfolder)
 snp_list_edu <- read.table("edu_snplist.txt")
 snp_list_cog <- read.table("cog_snplist.txt")
+
 source("fsw.R")
 ```
 
@@ -57,8 +92,61 @@ Education SNPs taken from Okbay A, Beauchamp JP, Fontana MA, Lee JJ, Pers TH, Ri
 
 Cognitive ability SNPs taken from Sniekers S, Stringer S, Watanabe K, Jansen PR, Coleman JR, Krapohl E, et al. Genome-wide association meta-analysis of 78,308 individuals identifies new loci and genes influencing human intelligence. Nat Genet. 2017.
 
+Get the betas for the snps, identify any overlapping SNPs and generate the scores
 
-1. Cleaning the phenotype data
+```{r, include=FALSE}
+# library(TwoSampleMR)
+# library(readxl)
+# iq_effects <- read_excel("Sniekers_intelligence_effectsizes.xlsx")
+# write_delim(iq_effects, "Sniekers_intelligence_effectsizes.txt")
+# 
+# edu_effects <- read_excel("Okbay_edu_effectsizes.xlsx")
+# write_delim(edu_effects, "Okbay_edu_effectsizes.txt")
+# 
+# iq_effects <- read_exposure_data("Sniekers_intelligence_effectsizes.txt")
+# iq_effects_clumped <- clump_data(iq_effects)
+# edu_effects <- read_exposure_data("Okbay_edu_effectsizes.txt")
+# edu_effects_clumped <- clump_data(edu_effects)
+# 
+# all_snps <- bind_rows(edu_effects_clumped, iq_effects_clumped)
+# all_snps <- all_snps %>% select(c(SNP, effect_allele.exposure, pval.exposure))
+# all_snps_clumped <- clump_data(all_snps)
+# 
+# 
+# 
+# 
+
+```
+
+
+4 SNPS are in LD across education and IQ lists
+The pairs are;
+
+IQ: rs10191758, education: rs17824247
+IQ: rs13010010, education: rs12987662
+IQ: rs41352752, education: rs10061788
+IQ: rs78164635, education: rs1008078
+
+
+```{r, include = FALSE}
+#Checking the correct SNPs have been identified as pairs 
+# 
+# SNP_pair1 <- filter(all_snps, grepl('rs10191758|rs17824247', SNP))
+# clump_data(SNP_pair1)
+# 
+# SNP_pair2 <- filter(all_snps, grepl('rs13010010|rs12987662', SNP))
+# clump_data(SNP_pair2)
+# 
+# SNP_pair3 <- filter(all_snps, grepl('rs41352752|rs10061788', SNP))
+# clump_data(SNP_pair3)
+# 
+# SNP_pair4 <- filter(all_snps, grepl('rs78164635|rs1008078', SNP))
+# clump_data(SNP_pair4)
+
+```
+
+
+Cleaning the phenotype data
  - rename variables and create the age variable 
 
 ```{r, include=FALSE}
@@ -92,11 +180,12 @@ for(i in 1:length(snp_list$V1)){
   instruments <- c(instruments, snp_list[i,1])
 }
 
+
 colnames(dat)<-gsub("_A","",colnames(dat))
 colnames(dat)<-gsub("_G","",colnames(dat))
 colnames(dat)<-gsub("_C","",colnames(dat))
 colnames(dat)<-gsub("_T","",colnames(dat))
-
+ 
 ```
 
  - replace edu age with 21 if highest qual is degree
@@ -159,7 +248,7 @@ Overall the results show that education has a bmi lowering effect and cognitive 
 
 covars <- paste(" age + male +", paste0("PC",1:10,collapse = "+"), "|", 
                 "age + male +", paste0("PC",1:10,collapse = "+"))
-#[Note - covriates need to be included on both sides of the covars paste command]
+#[Note - covariates need to be included on both sides of the covars paste command]
 
 ivformula <- as.formula(paste("lnbmi ~ edu_age + cog", covars, 
                               paste(instruments, collapse="+"), sep = "+"))
@@ -183,15 +272,43 @@ fsw(scorereg)
 ```
 
 
+\section(Adaptive LASSO results)
 
-Lasso analysis
- - notes: update to use correct file when have github linked properly again. 
- 
- 
-```{r}
-source("lasso_function.R")
+Using the unclumped list of SNPs - and all overlapping SNPs in the list for both exposures. 
+
+Some SNPs are excluded from the analysis due to not being present in the UK Biobank data 
+rs10191758 - IQ/overlapping
+rs13010010 - IQ/overlapping
+rs4728302 - Education
+
+```{r, include = FALSE}
+source("MVMR Adptive Lasso Functions - Block Structure.R")
+source("MVMR Adptive Lasso Functions.R")
+
+#create the lists of snps for each exposure and for both
+#snp_list_edu <- tibble(snp_list_edu$V1)
+snp_list_edu <- snp_list_edu %>%
+                 filter(!grepl('rs17824247|rs12987662|rs10061788|rs1008078|rs17167170', snp_list_edu$V1)) 
+#%>%
+ #                rename(V1 = "edu_effects$SNP")
+
+#snp_list_iq <- tibble(snp_list_cog$V1)
+snp_list_iq <- snp_list_cog %>%
+                filter(!grepl('rs10191758|rs13010010|rs41352752|rs78164635|rs4728302', snp_list_cog$V1)) 
+#%>%
+  #              rename(V1 = "iq_effects$SNP")
+
+snp_list_both <- tibble(snp_list_cog$V1)
+snp_list_both <- snp_list_both %>%
+                  filter(grepl('rs41352752|rs78164635|rs17824247|rs12987662|rs10061788|rs1008078', snp_list_cog$V1)) %>%
+                  rename(V1 = "snp_list_cog$V1")
+
+lengthedu <- length(snp_list_edu$V1)
+lengthboth <- length(snp_list_both$V1)
 
 dat_sample <- dat 
+#%>%
+ # slice_sample(prop = 0.01)
 
 #set up data
 
@@ -202,20 +319,59 @@ D <- dat_sample %>%
   as.matrix()
 
 
-ivs <- dat_sample %>% 
-  select(starts_with("rs")) %>%
-  as.matrix()
+f <- as.vector(snp_list_edu$V1)
+ivs_edu <- subset(dat_sample, select=f)
+
+f <- as.vector(snp_list_both$V1)
+ivs_both <- subset(dat_sample, select=f)
+
+f <- as.vector(snp_list_iq$V1)
+ivs_iq <- subset(dat_sample, select=f)
+
+ivs<- bind_cols(ivs_edu, ivs_both, ivs_iq)
+ivs <- as.matrix(ivs)
+
 
 X <- dat_sample %>% 
   select(age, male, PC1:PC10) %>%
   as.matrix()
 
+```
 
+
+Adaptive lasso based on 10 fold cross validation
+
+
+```{r}
 MVadap.cv(Y,D,ivs,X,alpha = 0.05)
+
+```
+
+Adaptive lasso based on Sargan testing downward selection
+
+
+```{r}
 
 MVadap.dt(Y,D,ivs,X,alpha = 0.05, tuning = 0.1/log(length(Y)))
 
 ```
 
+Adaptive lasso based on Sargan testing downward selection with a block structure applied to the SNPs
 
+```{r}
 
+MVadap.dtblock(Y,D,ivs,index1 = c(1:(lengthedu+lengthboth)), index2 = c((lengthedu+1):ncol(ivs)),X,alpha = 0.05, tuning = 0.1/log(length(Y)))
+
+```
+
+2SLS regression with the score excluding the identified SNPs
+7 SNPs were removed from the education score and 3 from the cognitive ability score
+
+```{r}
+grsformula <- as.formula(paste("lnbmi ~ edu_age + cog", covars, 
+                               "cog_grs_update", "edu_grs_update", sep = "+"))
+
+scorereg <- ivreg(grsformula, data=dat, model=TRUE) 
+summary(scorereg, diagnostics=TRUE)
+fsw(scorereg)
+```
