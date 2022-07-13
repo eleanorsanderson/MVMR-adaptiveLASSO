@@ -1,0 +1,434 @@
+---
+title: "MVMR LASSO analysis"
+author: "Eleanor Sanderson"
+output: 
+  pdf_document: 
+    keep_tex: true
+---
+
+
+```{r, setup, include=FALSE}
+library(tidyverse)
+library(readr)
+library(dplyr)
+library(zoo)
+library(AER)
+library(ivreg)
+library(ggplot2)
+library(naniar)
+library(lubridate)
+
+source("filepaths.R")
+
+```
+
+colnames(df) <- paste("Column" ,original_cols,sep="-")
+
+```{r, include=FALSE}
+
+setwd(datafolder)
+load("phenodat_update.RData")
+##to do 
+
+phenodat <- phenodat %>%
+  rename(f31 = `31-0.0`) %>%
+  rename(f34 = `34-0.0`) %>%
+  rename(f52 = `52-0.0`) %>%
+  rename(f53 = `53-0.0`) %>%
+  rename(f55 = `55-0.0`) %>%
+  rename(f845 = `845-0.0`) %>%
+  rename(f6138 = `6138-0.0`) %>%
+  rename(f20191 = `20191-0.0`) %>%
+  rename(f21001 = `21001-0.0`) 
+  
+
+lvl.0009 <- c(0,1)
+lbl.0009 <- c("Female","Male")
+phenodat$f31 <- ordered(phenodat$f31, levels=lvl.0009, labels=lbl.0009)
+
+
+lvl.100305 <- c(-7,-3,1,2,3,4,5,6)
+lbl.100305 <- c("None of the above","Prefer not to answer","College or University degree","A levels/AS levels or equivalent","O levels/GCSEs or equivalent","CSEs or equivalent","NVQ or HND or HNC or equivalent","Other professional qualifications eg: nursing, teaching")
+phenodat$f6138 <- ordered(phenodat$f6138, levels=lvl.100305, labels=lbl.100305)
+
+
+lvl.0008 <- c(1,2,3,4,5,6,7,8,9,10,11,12)
+lbl.0008 <- c("January","February","March","April","May","June","July","August","September","October","November","December")
+phenodat$f52 <- ordered(phenodat$f52, levels=lvl.0008, labels=lbl.0008)
+phenodat$f53 <- as.Date(phenodat$f53)
+phenodat$f55 <- ordered(phenodat$f55, levels=lvl.0008, labels=lbl.0008)
+
+
+
+```
+
+
+```{r, include=FALSE}
+setwd(datafolder)
+load("snpdata.Rdata")
+snpdat <- select(snpdat, -edu_grs, -cog_grs)
+load("PCs.Rdata")
+
+PCs <- select(PCs, FID, V3:V12, app) %>%
+  rename(PC1 = V3) %>%
+  rename(PC2 = V4) %>%
+  rename(PC3 = V5) %>%
+  rename(PC4 = V6) %>%
+  rename(PC5 = V7) %>%
+  rename(PC6 = V8) %>%
+  rename(PC7 = V9) %>%
+  rename(PC8 = V10) %>%
+  rename(PC9 = V11) %>%
+  rename(PC10 = V12)
+
+
+```
+
+
+```{r}
+
+setwd(projectfolder)
+
+linker <- read_csv("linker.csv")
+
+dat <- as_tibble(phenodat) %>%
+  rename(app=eid) %>%
+  inner_join(linker, by="app")
+
+dat <- dat %>%
+  rename(FID=ieu) %>%
+       inner_join(snpdat, by="FID") %>%
+      inner_join(PCs, by="FID")
+
+setwd(datafolder)
+
+#add in the scores created using the GWAS effect sizes
+educationscore <- read_table2("education.sscore")
+cogscore <- read_table2("cognitive_ability.sscore")
+
+
+
+educationscore_update <- read_table2("education_new.sscore")
+cogscore_update <- read_table2("cognitive_ability_new.sscore")
+
+educationscore <- educationscore %>% 
+                          rename(FID = `#FID`) %>%
+                          rename(edu_grs = SCORE1_AVG)
+
+cogscore <- cogscore %>% 
+                          rename(FID = `#FID`) %>%
+                          rename(cog_grs = SCORE1_AVG)
+
+educationscore_update <- educationscore_update %>% 
+                          rename(FID = `#FID`) %>%
+                          rename(edu_grs_update = SCORE1_AVG)
+
+cogscore_update <- cogscore_update %>% 
+                          rename(FID = `#FID`) %>%
+                          rename(cog_grs_update = SCORE1_AVG)
+
+scores <- educationscore %>%
+  inner_join(cogscore, by="FID") %>%
+  inner_join(educationscore_update, by="FID") %>%
+  inner_join(cogscore_update, by="FID") %>%
+  select(FID, edu_grs, cog_grs, edu_grs_update, cog_grs_update)
+
+dat <- dat %>%
+  inner_join(scores, by="FID")
+
+                  
+setwd(projectfolder)
+snp_list_edu <- read.table("edu_snplist.txt")
+snp_list_cog <- read.table("cog_snplist.txt")
+
+source("fsw.R")
+```
+
+Data
+Analysis dataset: UKBiobank
+
+Education SNPs taken from Okbay A, Beauchamp JP, Fontana MA, Lee JJ, Pers TH, Rietveld CA, et al. Genome-wide association study identifies 74 loci associated with educational attainment. Nature. 2016
+
+Cognitive ability SNPs taken from Sniekers S, Stringer S, Watanabe K, Jansen PR, Coleman JR, Krapohl E, et al. Genome-wide association meta-analysis of 78,308 individuals identifies new loci and genes influencing human intelligence. Nat Genet. 2017.
+
+Get the betas for the snps, identify any overlapping SNPs and generate the scores
+
+```{r, include=FALSE}
+# library(TwoSampleMR)
+# library(readxl)
+# iq_effects <- read_excel("Sniekers_intelligence_effectsizes.xlsx")
+# write_delim(iq_effects, "Sniekers_intelligence_effectsizes.txt")
+# 
+# edu_effects <- read_excel("Okbay_edu_effectsizes.xlsx")
+# write_delim(edu_effects, "Okbay_edu_effectsizes.txt")
+# 
+# iq_effects <- read_exposure_data("Sniekers_intelligence_effectsizes.txt")
+# iq_effects_clumped <- clump_data(iq_effects)
+# edu_effects <- read_exposure_data("Okbay_edu_effectsizes.txt")
+# edu_effects_clumped <- clump_data(edu_effects)
+# 
+# all_snps <- bind_rows(edu_effects_clumped, iq_effects_clumped)
+# all_snps <- all_snps %>% select(c(SNP, effect_allele.exposure, pval.exposure))
+# all_snps_clumped <- clump_data(all_snps)
+# 
+# 
+# 
+# 
+
+```
+
+
+4 SNPS are in LD across education and IQ lists
+The pairs are;
+
+IQ: rs10191758, education: rs17824247
+IQ: rs13010010, education: rs12987662
+IQ: rs41352752, education: rs10061788
+IQ: rs78164635, education: rs1008078
+
+
+```{r, include = FALSE}
+#Checking the correct SNPs have been identified as pairs 
+# 
+# SNP_pair1 <- filter(all_snps, grepl('rs10191758|rs17824247', SNP))
+# clump_data(SNP_pair1)
+# 
+# SNP_pair2 <- filter(all_snps, grepl('rs13010010|rs12987662', SNP))
+# clump_data(SNP_pair2)
+# 
+# SNP_pair3 <- filter(all_snps, grepl('rs41352752|rs10061788', SNP))
+# clump_data(SNP_pair3)
+# 
+# SNP_pair4 <- filter(all_snps, grepl('rs78164635|rs1008078', SNP))
+# clump_data(SNP_pair4)
+
+```
+
+
+Cleaning the phenotype data
+ - rename variables and create the age variable 
+
+```{r, include=FALSE}
+
+dat <- rename(dat, yob = f34) %>%
+          rename(mob = f52) %>%
+          rename(sex = f31) %>%
+          rename(date = f53) %>%
+          rename(edu_age = f845) %>%
+          rename(high_qual = f6138) %>%
+          rename(cog = f20191) %>%
+          rename(bmi = f21001) 
+
+dat <- mutate(dat, dob = make_date(year = yob, month = mob), .before = yob) 
+dat <- mutate(dat,age = floor(time_length(dat$date - dat$dob, unit = "years")), .before = dob)
+
+dat$male <- if_else(dat$sex %in% "Male", 1, 0)
+
+```
+
+ - create a list of SNPs for the instruments for the MR analysis
+ - remove the effect alleles from the column names in the SNP data
+```{r, include=FALSE}
+
+
+snp_list <- tibble(rbind(snp_list_edu,snp_list_cog))
+
+instruments = NULL
+for(i in 1:length(snp_list$V1)){
+  instruments <- c(instruments, snp_list[i,1])
+}
+
+
+colnames(dat)<-gsub("_A","",colnames(dat))
+colnames(dat)<-gsub("_G","",colnames(dat))
+colnames(dat)<-gsub("_C","",colnames(dat))
+colnames(dat)<-gsub("_T","",colnames(dat))
+ 
+```
+
+ - replace edu age with 21 if highest qual is degree
+ - complete case data only
+ - remove age leaving education < 10
+ - standardise cognitive ability
+ - log bmi
+
+```{r, include = FALSE}
+
+dat <- dat %>% mutate(edu_age = replace(edu_age, which(is.na(edu_age) & high_qual == "College or University degree"), 21)) 
+
+dat <-  drop_na(dat, c(cog,edu_age,bmi,age,sex)) 
+
+dat <- dat %>%  replace_with_na_at(.vars = c("edu_age"),
+                     condition = ~.x <10)
+dat <- drop_na(dat, edu_age)
+
+dat <- dat %>% mutate_at("cog", ~(scale(.) %>% as.vector))
+
+dat$lnbmi <- log(dat$bmi)
+
+```
+
+Plot the distributions for each of the main variables used in the analysis
+
+```{r, include=FALSE}
+
+ggplot(dat, aes(x=bmi)) +
+    geom_histogram(aes(y=..density..),
+                   binwidth=2,
+                   colour="black", fill="white") +
+    geom_density(alpha=.2, fill="#FF6666")
+
+ggplot(dat, aes(x=edu_age)) +
+    geom_histogram(binwidth=1,
+                   colour="black", fill="white")
+
+ggplot(dat, aes(x=cog)) +
+    geom_histogram(binwidth=1,
+                   colour="black", fill="white")
+```
+2. MVMR estimation 
+
+2SLS regression including each snp as a separate instrument
+
+These regressions give similar results to those in Sanderson et al 2019. 
+Differences have arrisen because: 
+ - here interim release data has not been excluded from the analysis
+ - fewer covariates have been included in the estimation
+ 
+Covariates included in each regression are; age, sex and 10 PC's. 
+
+Overall the results show that education has a bmi lowering effect and cognitive ability has limited evidence of any effect. When the SNPs are included individually the Sargan statistic is large - indicating substantial heterogenetiy in the results. However the instruments are relatively weak. When the genetic risk scores are used as instruments the instruments are strong and the effect estimates are further from the null for each exposure. 
+
+
+
+
+```{r}
+
+covars <- paste(" age + male +", paste0("PC",1:10,collapse = "+"), "|", 
+                "age + male +", paste0("PC",1:10,collapse = "+"))
+#[Note - covariates need to be included on both sides of the covars paste command]
+
+ivformula <- as.formula(paste("lnbmi ~ edu_age + cog", covars, 
+                              paste(instruments, collapse="+"), sep = "+"))
+
+indreg <- ivreg(ivformula, data=dat, model = TRUE)
+summary(indreg, diagnostics=TRUE)
+fsw(indreg)
+
+```
+
+2SLS regression using the weighted scores 
+
+```{r}
+grsformula <- as.formula(paste("lnbmi ~ edu_age + cog", covars, 
+                               "cog_grs", "edu_grs", sep = "+"))
+
+scorereg <- ivreg(grsformula, data=dat, model=TRUE) 
+summary(scorereg, diagnostics=TRUE)
+fsw(scorereg)
+
+```
+
+
+\section(Adaptive LASSO results)
+
+Using the unclumped list of SNPs - and all overlapping SNPs in the list for both exposures. 
+
+Some SNPs are excluded from the analysis due to not being present in the UK Biobank data 
+rs10191758 - IQ/overlapping
+rs13010010 - IQ/overlapping
+rs4728302 - Education
+
+```{r, include = FALSE}
+source("MVMR Adptive Lasso Functions - Block Structure.R")
+source("MVMR Adptive Lasso Functions.R")
+
+#create the lists of snps for each exposure and for both
+#snp_list_edu <- tibble(snp_list_edu$V1)
+snp_list_edu <- snp_list_edu %>%
+                 filter(!grepl('rs17824247|rs12987662|rs10061788|rs1008078|rs17167170', snp_list_edu$V1))
+#%>%
+ #                rename(V1 = "edu_effects$SNP")
+
+#snp_list_iq <- tibble(snp_list_cog$V1)
+snp_list_iq <- snp_list_cog %>%
+                filter(!grepl('rs10191758|rs13010010|rs41352752|rs78164635|rs4728302', snp_list_cog$V1))
+#%>%
+  #              rename(V1 = "iq_effects$SNP")
+
+snp_list_both <- tibble(snp_list_cog$V1)
+snp_list_both <- snp_list_both %>%
+                  filter(grepl('rs41352752|rs78164635|rs17824247|rs12987662|rs10061788|rs1008078', snp_list_cog$V1)) %>%
+                  rename(V1 = "snp_list_cog$V1")
+
+lengthedu <- length(snp_list_edu$V1)
+lengthboth <- length(snp_list_both$V1)
+
+dat_sample <- dat %>%
+  slice_sample(prop = 0.01)
+
+#set up data
+
+Y <- as.vector(dat_sample$lnbmi)
+
+D <- dat_sample %>%
+  select(edu_age, cog) %>%
+  as.matrix()
+
+
+f <- as.vector(snp_list_edu$V1)
+ivs_edu <- subset(dat_sample, select=f)
+
+f <- as.vector(snp_list_both$V1)
+ivs_both <- subset(dat_sample, select=f)
+
+f <- as.vector(snp_list_iq$V1)
+ivs_iq <- subset(dat_sample, select=f)
+
+ivs<- bind_cols(ivs_edu, ivs_both, ivs_iq)
+ivs <- as.matrix(ivs)
+
+
+X <- dat_sample %>%
+  select(age, male, PC1:PC10) %>%
+  as.matrix()
+
+```
+
+
+Adaptive lasso based on 10 fold cross validation
+
+
+```{r}
+MVadap.cv(Y,D,ivs,X,alpha = 0.05)
+
+```
+
+Adaptive lasso based on Sargan testing downward selection
+
+
+```{r}
+
+MVadap.dt(Y,D,ivs,X,alpha = 0.05, tuning = 0.1/log(length(Y)))
+
+```
+
+Adaptive lasso based on Sargan testing downward selection with a block structure applied to the SNPs
+
+```{r}
+
+MVadap.dtblock(Y,D,ivs,index1 = c(1:(lengthedu+lengthboth)), index2 = c((lengthedu+1):ncol(ivs)),X,alpha = 0.05, tuning = 0.1/log(length(Y)))
+
+```
+
+2SLS regression with the score excluding the identified SNPs
+9 SNPs were removed from the education score and 3 from the cognitive ability score
+
+```{r}
+grsformula <- as.formula(paste("lnbmi ~ edu_age + cog", covars, 
+                               "cog_grs_update", "edu_grs_update", sep = "+"))
+
+scorereg <- ivreg(grsformula, data=dat, model=TRUE) 
+summary(scorereg, diagnostics=TRUE)
+fsw(scorereg)
+```
