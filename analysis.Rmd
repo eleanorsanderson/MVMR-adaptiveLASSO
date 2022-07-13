@@ -1,7 +1,9 @@
 ---
 title: "MVMR LASSO analysis"
 author: "Eleanor Sanderson"
-output: pdf_document
+output: 
+  pdf_document: 
+    keep_tex: true
 ---
 
 
@@ -16,19 +18,58 @@ library(ggplot2)
 library(naniar)
 library(lubridate)
 
-#source("filepaths.R")
+source("filepaths.R")
 
 ```
 
+colnames(df) <- paste("Column" ,original_cols,sep="-")
+
 ```{r, include=FALSE}
 
-#setwd(datafolder)
-load("phenotypedata.Rdata")
+setwd(datafolder)
+load("phenodat_update.RData")
+##to do 
+
+phenodat <- phenodat %>%
+  rename(f31 = `31-0.0`) %>%
+  rename(f34 = `34-0.0`) %>%
+  rename(f52 = `52-0.0`) %>%
+  rename(f53 = `53-0.0`) %>%
+  rename(f55 = `55-0.0`) %>%
+  rename(f845 = `845-0.0`) %>%
+  rename(f6138 = `6138-0.0`) %>%
+  rename(f20191 = `20191-0.0`) %>%
+  rename(f21001 = `21001-0.0`) 
+  
+
+lvl.0009 <- c(0,1)
+lbl.0009 <- c("Female","Male")
+phenodat$f31 <- ordered(phenodat$f31, levels=lvl.0009, labels=lbl.0009)
+
+
+lvl.100305 <- c(-7,-3,1,2,3,4,5,6)
+lbl.100305 <- c("None of the above","Prefer not to answer","College or University degree","A levels/AS levels or equivalent","O levels/GCSEs or equivalent","CSEs or equivalent","NVQ or HND or HNC or equivalent","Other professional qualifications eg: nursing, teaching")
+phenodat$f6138 <- ordered(phenodat$f6138, levels=lvl.100305, labels=lbl.100305)
+
+
+lvl.0008 <- c(1,2,3,4,5,6,7,8,9,10,11,12)
+lbl.0008 <- c("January","February","March","April","May","June","July","August","September","October","November","December")
+phenodat$f52 <- ordered(phenodat$f52, levels=lvl.0008, labels=lbl.0008)
+phenodat$f53 <- as.Date(phenodat$f53)
+phenodat$f55 <- ordered(phenodat$f55, levels=lvl.0008, labels=lbl.0008)
+
+
+
+```
+
+
+```{r, include=FALSE}
+setwd(datafolder)
 load("snpdata.Rdata")
 snpdat <- select(snpdat, -edu_grs, -cog_grs)
 load("PCs.Rdata")
 
-PCs <- select(PCs, V3:V12, app) %>%
+PCs <- select(PCs, FID, V3:V12, app) %>%
   rename(PC1 = V3) %>%
   rename(PC2 = V4) %>%
   rename(PC3 = V5) %>%
@@ -38,47 +79,65 @@ PCs <- select(PCs, V3:V12, app) %>%
   rename(PC7 = V9) %>%
   rename(PC8 = V10) %>%
   rename(PC9 = V11) %>%
-  rename(PC10 = V12) 
+  rename(PC10 = V12)
 
-dat <- as_tibble(bd2) %>% 
-                  rename(app=f.eid) %>%
-                  inner_join(snpdat, by="app") %>%
-                  inner_join(PCs, by="app")
 
-#add in the scores created using the GWAS effect sizes
-educationscore <- read.delim("education.sscore", header=FALSE, comment.char="#")
-cogscore <- read.delim("cognitive_ability.sscore", header=FALSE, comment.char="#")
+```
 
-educationscore_update <- read.delim("education_update.sscore", header=FALSE, comment.char="#")
-cogscore_update <- read.delim("cognitive_ability_update.sscore", header=FALSE, comment.char="#")
 
-educationscore <- educationscore %>% 
-                          rename(IID = V2) %>%
-                          rename(edu_grs = V5)
+```{r}
 
-cogscore <- cogscore %>% 
-                          rename(IID = V2) %>%
-                          rename(cog_grs = V5)
+setwd(projectfolder)
 
-educationscore_update <- educationscore_update %>% 
-                          rename(IID = V2) %>%
-                          rename(edu_grs_update = V5)
+linker <- read_csv("linker.csv")
 
-cogscore_update <- cogscore_update %>% 
-                          rename(IID = V2) %>%
-                          rename(cog_grs_update = V5)
-
-scores <- educationscore %>%
-  inner_join(cogscore, by="IID") %>%
-  inner_join(educationscore_update, by="IID") %>%
-  inner_join(cogscore_update, by="IID") %>%
-  select(IID, edu_grs, cog_grs, edu_grs_update, cog_grs_update)
+dat <- as_tibble(phenodat) %>%
+  rename(app=eid) %>%
+  inner_join(linker, by="app")
 
 dat <- dat %>%
-  left_join(scores)
+  rename(FID=ieu) %>%
+       inner_join(snpdat, by="FID") %>%
+      inner_join(PCs, by="FID")
+
+setwd(datafolder)
+
+#add in the scores created using the GWAS effect sizes
+educationscore <- read_table2("education.sscore")
+cogscore <- read_table2("cognitive_ability.sscore")
+
+
+
+educationscore_update <- read_table2("education_new.sscore")
+cogscore_update <- read_table2("cognitive_ability_new.sscore")
+
+educationscore <- educationscore %>% 
+                          rename(FID = `#FID`) %>%
+                          rename(edu_grs = SCORE1_AVG)
+
+cogscore <- cogscore %>% 
+                          rename(FID = `#FID`) %>%
+                          rename(cog_grs = SCORE1_AVG)
+
+educationscore_update <- educationscore_update %>% 
+                          rename(FID = `#FID`) %>%
+                          rename(edu_grs_update = SCORE1_AVG)
+
+cogscore_update <- cogscore_update %>% 
+                          rename(FID = `#FID`) %>%
+                          rename(cog_grs_update = SCORE1_AVG)
+
+scores <- educationscore %>%
+  inner_join(cogscore, by="FID") %>%
+  inner_join(educationscore_update, by="FID") %>%
+  inner_join(cogscore_update, by="FID") %>%
+  select(FID, edu_grs, cog_grs, edu_grs_update, cog_grs_update)
+
+dat <- dat %>%
+  inner_join(scores, by="FID")
 
                   
-#setwd(projectfolder)
+setwd(projectfolder)
 snp_list_edu <- read.table("edu_snplist.txt")
 snp_list_cog <- read.table("cog_snplist.txt")
 
@@ -151,15 +210,14 @@ Cleaning the phenotype data
 
 ```{r, include=FALSE}
 
-dat <- rename(dat, yob = f.34.0.0) %>%
-          rename(mob = f.52.0.0) %>%
-          rename(sex = f.31.0.0) %>%
-          rename(date = f.53.0.0) %>%
-          rename(edu_age = f.845.0.0) %>%
-          rename(high_qual = f.6138.0.0) %>%
-          rename(smoke = f.20116.0.0) %>%
-          rename(cog = f.20016.0.0) %>%
-          rename(bmi = f.21001.0.0) 
+dat <- rename(dat, yob = f34) %>%
+          rename(mob = f52) %>%
+          rename(sex = f31) %>%
+          rename(date = f53) %>%
+          rename(edu_age = f845) %>%
+          rename(high_qual = f6138) %>%
+          rename(cog = f20191) %>%
+          rename(bmi = f21001) 
 
 dat <- mutate(dat, dob = make_date(year = yob, month = mob), .before = yob) 
 dat <- mutate(dat,age = floor(time_length(dat$date - dat$dob, unit = "years")), .before = dob)
@@ -214,17 +272,17 @@ Plot the distributions for each of the main variables used in the analysis
 
 ```{r, include=FALSE}
 
-ggplot(dat, aes(x=bmi)) + 
-    geom_histogram(aes(y=..density..),     
+ggplot(dat, aes(x=bmi)) +
+    geom_histogram(aes(y=..density..),
                    binwidth=2,
                    colour="black", fill="white") +
-    geom_density(alpha=.2, fill="#FF6666")  
+    geom_density(alpha=.2, fill="#FF6666")
 
-ggplot(dat, aes(x=edu_age)) + 
+ggplot(dat, aes(x=edu_age)) +
     geom_histogram(binwidth=1,
                    colour="black", fill="white")
 
-ggplot(dat, aes(x=cog)) + 
+ggplot(dat, aes(x=cog)) +
     geom_histogram(binwidth=1,
                    colour="black", fill="white")
 ```
@@ -288,13 +346,13 @@ source("MVMR Adptive Lasso Functions.R")
 #create the lists of snps for each exposure and for both
 #snp_list_edu <- tibble(snp_list_edu$V1)
 snp_list_edu <- snp_list_edu %>%
-                 filter(!grepl('rs17824247|rs12987662|rs10061788|rs1008078|rs17167170', snp_list_edu$V1)) 
+                 filter(!grepl('rs17824247|rs12987662|rs10061788|rs1008078|rs17167170', snp_list_edu$V1))
 #%>%
  #                rename(V1 = "edu_effects$SNP")
 
 #snp_list_iq <- tibble(snp_list_cog$V1)
 snp_list_iq <- snp_list_cog %>%
-                filter(!grepl('rs10191758|rs13010010|rs41352752|rs78164635|rs4728302', snp_list_cog$V1)) 
+                filter(!grepl('rs10191758|rs13010010|rs41352752|rs78164635|rs4728302', snp_list_cog$V1))
 #%>%
   #              rename(V1 = "iq_effects$SNP")
 
@@ -306,16 +364,15 @@ snp_list_both <- snp_list_both %>%
 lengthedu <- length(snp_list_edu$V1)
 lengthboth <- length(snp_list_both$V1)
 
-dat_sample <- dat 
-#%>%
- # slice_sample(prop = 0.01)
+dat_sample <- dat %>%
+  slice_sample(prop = 0.01)
 
 #set up data
 
 Y <- as.vector(dat_sample$lnbmi)
 
-D <- dat_sample %>% 
-  select(edu_age, cog) %>% 
+D <- dat_sample %>%
+  select(edu_age, cog) %>%
   as.matrix()
 
 
@@ -332,7 +389,7 @@ ivs<- bind_cols(ivs_edu, ivs_both, ivs_iq)
 ivs <- as.matrix(ivs)
 
 
-X <- dat_sample %>% 
+X <- dat_sample %>%
   select(age, male, PC1:PC10) %>%
   as.matrix()
 
@@ -365,7 +422,7 @@ MVadap.dtblock(Y,D,ivs,index1 = c(1:(lengthedu+lengthboth)), index2 = c((lengthe
 ```
 
 2SLS regression with the score excluding the identified SNPs
-7 SNPs were removed from the education score and 3 from the cognitive ability score
+9 SNPs were removed from the education score and 3 from the cognitive ability score
 
 ```{r}
 grsformula <- as.formula(paste("lnbmi ~ edu_age + cog", covars, 
