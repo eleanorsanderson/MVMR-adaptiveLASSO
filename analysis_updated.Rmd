@@ -340,7 +340,7 @@ rs13010010 - IQ/overlapping
 rs4728302 - Education
 
 ```{r, include = FALSE}
-source("MVMR Adptive Lasso Functions - Block Structure.R")
+source("MVMR Adptive Lasso Functions - Block Structure_LIML.R")
 source("MVMR Adptive Lasso Functions.R")
 
 #create the lists of snps for each exposure and for both
@@ -364,8 +364,7 @@ snp_list_both <- snp_list_both %>%
 lengthedu <- length(snp_list_edu$V1)
 lengthboth <- length(snp_list_both$V1)
 
-dat_sample <- dat %>%
-  slice_sample(prop = 0.01)
+dat_sample <- dat 
 
 #set up data
 
